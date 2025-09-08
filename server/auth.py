@@ -1,4 +1,3 @@
-# server/auth.py
 """
 Simple in-memory authentication manager for Phase 1.
 
@@ -14,7 +13,12 @@ _lock = threading.Lock()
 
 class AuthManager:
     def __init__(self):
-        # servers: server_name -> {"password_hash": str, "owner_conn": conn, "clients": set(usernames)}
+        # servers: server_name -> {
+        #   "password_hash": str,
+        #   "owner_conn": conn,
+        #   "clients": set(usernames),
+        #   "host": str
+        # }
         self.servers = {}
 
     def create_server(self, server_name: str, password_hash: str, owner_conn):
@@ -25,7 +29,8 @@ class AuthManager:
             self.servers[server_name] = {
                 "password_hash": password_hash,
                 "owner_conn": owner_conn,
-                "clients": set()
+                "clients": set(),
+                "host": None,   # ✅ will be filled in after auth
             }
             return True, "created"
 
@@ -47,19 +52,21 @@ class AuthManager:
                 return
             if username:
                 self.servers[server_name]["clients"].discard(username)
-            # If owner_conn is None or no owner, or owner left - we do not track owner_conn cleanup here.
-            # For Phase 1 we won't implement full owner tracking removal beyond memory cleanup possibility.
+            # cleanup logic can be expanded later
 
     def get_server_list(self):
         with _lock:
             return list(self.servers.keys())
+        
+    def is_host(self, server_name, username):
+        """Return True if the given username is the host of the server."""
+        if server_name not in self.servers:
+            return False
+        return self.servers[server_name].get("host") == username
 
     @staticmethod
     def hash_password_raw(password: str) -> str:
-        """
-        Helper to get SHA256 hex digest of a raw password string.
-        Clients are expected to compute the same and send the hex digest over the wire.
-        """
+        """Helper to get SHA256 hex digest of a raw password string."""
         if isinstance(password, str):
             password = password.encode("utf-8")
         return hashlib.sha256(password).hexdigest()

@@ -2,10 +2,12 @@ import argparse
 import socket
 import threading
 import sys
+import os
 import time
 import hashlib
-
 from core.utils import create_message, parse_message
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 5555
@@ -100,6 +102,7 @@ def command_host(args):
             # send chat messages (JSON chat)
             msg = create_message("chat", {"message": line})
             client.send(msg)
+            print(f"you : {line}")
     finally:
         client.close()
 
@@ -124,6 +127,7 @@ def command_join(args):
                 break
             msg = create_message("chat", {"message": line})
             client.send(msg)
+            print(f"you : {line}")
     finally:
         client.close()
 

@@ -11,25 +11,18 @@ PORT = 5555
 
 # global structures
 clients_lock = threading.Lock()
-# List of dicts: {"conn": socket, "addr": (ip,port), "username": str or None, "server_name": str or None}
-connected_clients = []
+connected_clients = []  # {"conn": socket, "addr": (ip,port), "username": str, "server_name": str}
 
 auth_mgr = AuthManager()
 
 def send_json(conn, obj_str):
-    """Send JSON (string) over socket; add newline delimiter for naive framing."""
     try:
         conn.sendall((obj_str + "\n").encode("utf-8"))
     except Exception:
-        # let caller handle removal
         raise
 
 def recv_full(conn):
-    """
-    Simple receiver for Phase 1: read available bytes and split by newline.
-    We'll return the raw string without newline. This assumes each message is sendall'd
-    as a single JSON string with newline appended (see send_json).
-    """
+    """Simple receiver for Phase 1 (newline-delimited messages)."""
     try:
         data = conn.recv(4096)
         if not data:
@@ -38,14 +31,22 @@ def recv_full(conn):
     except Exception:
         return None
 
-def broadcast_to_server(server_name, sender_username, text):
-    """Broadcast a 'chat' message to all connected clients that belong to server_name."""
+def broadcast_to_server(server_name, sender_username, text, sender_conn=None):
+    """Broadcast a 'chat' message to all clients in server_name except sender."""
     with clients_lock:
         to_remove = []
         for c in connected_clients:
             if c["server_name"] == server_name and c["conn"] is not None:
+                if c["conn"] == sender_conn:
+                    continue  # skip sender
+
+                # ✅ mark host if sender is host of this server
+                display_name = sender_username
+                if auth_mgr.is_host(server_name, sender_username):
+                    display_name = f"{sender_username} (HOST)"
+
                 try:
-                    msg = create_message("chat", {"from": sender_username, "message": text})
+                    msg = create_message("chat", {"from": display_name, "message": text})
                     send_json(c["conn"], msg)
                 except Exception:
                     to_remove.append(c)
@@ -67,7 +68,6 @@ def handle_client(conn, addr):
             if raw is None:
                 break
 
-            # Sometimes multiple messages could be batched; handle simple newline separated
             for line in raw.splitlines():
                 if not line.strip():
                     continue
@@ -89,9 +89,10 @@ def handle_client(conn, addr):
                     if ok:
                         client_entry["username"] = username
                         client_entry["server_name"] = server_name
+                        auth_mgr.servers[server_name]["host"] = username  # ✅ record host
                         resp = create_message("auth_result", {"ok": True, "message": "server_created"})
                         send_json(conn, resp)
-                        print(f"[SERVER CREATED] {server_name} by {addr}")
+                        print(f"[SERVER CREATED] {server_name} by {username}@{addr}")
                     else:
                         resp = create_message("auth_result", {"ok": False, "message": msg})
                         send_json(conn, resp)
@@ -112,8 +113,7 @@ def handle_client(conn, addr):
                         client_entry["server_name"] = server_name
                         resp = create_message("auth_result", {"ok": True, "message": "joined"})
                         send_json(conn, resp)
-                        # inform others
-                        broadcast_to_server(server_name, "SYSTEM", f"{username} has joined.")
+                        broadcast_to_server(server_name, "SYSTEM", f"{username} has joined.", sender_conn=None)
                         print(f"[JOIN] {username} -> {server_name} from {addr}")
                     else:
                         resp = create_message("auth_result", {"ok": False, "message": msg})
@@ -125,14 +125,13 @@ def handle_client(conn, addr):
                     username = client_entry.get("username", "unknown")
                     text = pdata.get("message", "")
                     if server_name:
-                        broadcast_to_server(server_name, username, text)
+                        broadcast_to_server(server_name, username, text, sender_conn=conn)
                         print(f"[CHAT] ({server_name}) {username}: {text}")
                     else:
                         resp = create_message("system", {"message": "not_in_server"})
                         send_json(conn, resp)
 
                 else:
-                    # unknown
                     resp = create_message("system", {"message": "unknown_type"})
                     send_json(conn, resp)
 
@@ -140,15 +139,13 @@ def handle_client(conn, addr):
         print("[ERROR] Exception in client handler:", e)
         traceback.print_exc()
     finally:
-        # cleanup
         print(f"[DISCONNECT] {addr}")
         try:
             server_name = client_entry.get("server_name")
             username = client_entry.get("username")
             if server_name and username:
-                # naive cleanup: remove username from auth manager clients
                 auth_mgr.remove_connection(server_name, username)
-                broadcast_to_server(server_name, "SYSTEM", f"{username} has left.")
+                broadcast_to_server(server_name, "SYSTEM", f"{username} has left.", sender_conn=None)
         except Exception:
             pass
 
