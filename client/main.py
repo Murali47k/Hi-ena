@@ -108,7 +108,7 @@ class Client:
         self.sock = None
 
 
-def command_host(args):
+def command_host(args, use_gui=False):
     client = Client(args.host, args.port)
     client.username = args.username or "host"
     if not client.connect():
@@ -122,8 +122,13 @@ def command_host(args):
     })
     client.send(payload)
 
-    # wait for auth_result or timeout
     time.sleep(0.5)
+
+    if use_gui:
+        from gui.main import run_gui
+        run_gui(client)
+        return
+
     print("[INFO] You are now hosting. Type chat messages to broadcast. /quit to exit.")
     try:
         while True:
@@ -132,13 +137,12 @@ def command_host(args):
                 break
             msg = create_message("chat", {"message": line})
             client.send(msg)
-            # ✅ update GUI too
             app_state.add_message(client.username, line)
     finally:
         client.close()
 
 
-def command_join(args):
+def command_join(args, use_gui=False):
     client = Client(args.host, args.port)
     client.username = args.username or "guest"
     if not client.connect():
@@ -153,6 +157,12 @@ def command_join(args):
     client.send(payload)
 
     time.sleep(0.5)
+
+    if use_gui:
+        from gui.main import run_gui
+        run_gui(client)
+        return
+
     print("[INFO] Joined (if auth succeeded). Type chat messages to send. /quit to exit.")
     try:
         while True:
@@ -161,7 +171,6 @@ def command_join(args):
                 break
             msg = create_message("chat", {"message": line})
             client.send(msg)
-            # ✅ update GUI too
             app_state.add_message(client.username, line)
     finally:
         client.close()
@@ -177,6 +186,7 @@ def main():
     hostp.add_argument("--username", required=False)
     hostp.add_argument("--host", default=DEFAULT_HOST)
     hostp.add_argument("--port", type=int, default=DEFAULT_PORT)
+    hostp.add_argument("--gui", action="store_true", help="Launch GUI client instead of CLI")
 
     joinp = sub.add_parser("join-server", help="Join an existing server/room")
     joinp.add_argument("--name", required=True)
@@ -184,13 +194,14 @@ def main():
     joinp.add_argument("--username", required=False)
     joinp.add_argument("--host", default=DEFAULT_HOST)
     joinp.add_argument("--port", type=int, default=DEFAULT_PORT)
+    joinp.add_argument("--gui", action="store_true", help="Launch GUI client instead of CLI")
 
     args = parser.parse_args()
 
     if args.command == "host-server":
-        command_host(args)
+        command_host(args, use_gui=args.gui)
     elif args.command == "join-server":
-        command_join(args)
+        command_join(args, use_gui=args.gui)
     else:
         parser.print_help()
 
