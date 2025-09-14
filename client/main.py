@@ -5,15 +5,20 @@ import sys
 import os
 import time
 import hashlib
-from core.utils import create_message, parse_message
 
+# add project root to sys.path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from core.utils import create_message, parse_message
+from gui.app_state import app_state  
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 5555
 
+
 def sha256_hex(s: str) -> str:
     return hashlib.sha256(s.encode("utf-8")).hexdigest()
+
 
 class Client:
     def __init__(self, host=DEFAULT_HOST, port=DEFAULT_PORT):
@@ -21,8 +26,10 @@ class Client:
         self.port = port
         self.sock = None
         self.listening = False
+        self.username = None  # store username for GUI tagging
 
     def connect(self):
+        """Connect to the server, start listener thread."""
         if self.sock:
             return True
         try:
@@ -36,13 +43,14 @@ class Client:
             return False
 
     def send(self, msg_str):
+        """Send a raw JSON message to the server."""
         try:
-            # append newline to help server-side simple framing
             self.sock.sendall((msg_str + "\n").encode("utf-8"))
         except Exception as e:
             print("[ERROR] send failed:", e)
 
     def _listener_thread(self):
+        """Listen for messages from the server and handle them."""
         while self.listening:
             try:
                 data = self.sock.recv(4096)
@@ -50,26 +58,45 @@ class Client:
                     print("[INFO] Server closed connection.")
                     self.listening = False
                     break
+
                 text = data.decode("utf-8")
-                # handle newline separated packets
                 for line in text.splitlines():
                     if not line.strip():
                         continue
                     packet = parse_message(line)
-                    ptype = packet.get("type")
-                    pdata = packet.get("data", {})
-                    if ptype == "auth_result":
-                        print("[AUTH]", pdata)
-                    elif ptype == "chat":
-                        print(f"{pdata.get('from')}: {pdata.get('message')}")
-                    elif ptype == "system":
-                        print("[SYSTEM]", pdata.get("message"))
-                    else:
-                        print("[RECV]", packet)
+                    self._handle_incoming(packet)
+
             except Exception as e:
                 print("[ERROR] listening:", e)
                 self.listening = False
                 break
+
+    def _handle_incoming(self, packet):
+        """Handles incoming packets and updates GUI state."""
+        ptype = packet.get("type")
+        pdata = packet.get("data", {})
+
+        if ptype == "auth_result":
+            print("[AUTH]", pdata)
+
+        elif ptype == "chat":
+            sender = pdata.get("from", "unknown")
+            msg = pdata.get("message", "")
+            print(f"{sender}: {msg}")
+            # ✅ Update GUI state
+            app_state.add_message(sender, msg)
+
+        elif ptype == "system":
+            sys_msg = pdata.get("message", "")
+            print("[SYSTEM]", sys_msg)
+            app_state.add_message("SYSTEM", sys_msg)
+
+        elif ptype == "clients":
+            # server sends updated client list
+            app_state.set_clients(pdata.get("list", []))
+
+        else:
+            print("[RECV]", packet)
 
     def close(self):
         self.listening = False
@@ -80,17 +107,21 @@ class Client:
             pass
         self.sock = None
 
+
 def command_host(args):
     client = Client(args.host, args.port)
+    client.username = args.username or "host"
     if not client.connect():
         return
+
     password_hash = sha256_hex(args.password)
     payload = create_message("host", {
         "server_name": args.name,
         "password_hash": password_hash,
-        "username": args.username or "host"
+        "username": client.username
     })
     client.send(payload)
+
     # wait for auth_result or timeout
     time.sleep(0.5)
     print("[INFO] You are now hosting. Type chat messages to broadcast. /quit to exit.")
@@ -99,25 +130,28 @@ def command_host(args):
             line = input()
             if line.strip().lower() == "/quit":
                 break
-            # send chat messages (JSON chat)
             msg = create_message("chat", {"message": line})
             client.send(msg)
-            print(f"you : {line}")
+            # ✅ update GUI too
+            app_state.add_message(client.username, line)
     finally:
         client.close()
 
+
 def command_join(args):
     client = Client(args.host, args.port)
+    client.username = args.username or "guest"
     if not client.connect():
         return
+
     password_hash = sha256_hex(args.password)
     payload = create_message("join", {
         "server_name": args.name,
         "password_hash": password_hash,
-        "username": args.username or "guest"
+        "username": client.username
     })
     client.send(payload)
-    # small wait for response
+
     time.sleep(0.5)
     print("[INFO] Joined (if auth succeeded). Type chat messages to send. /quit to exit.")
     try:
@@ -127,27 +161,29 @@ def command_join(args):
                 break
             msg = create_message("chat", {"message": line})
             client.send(msg)
-            print(f"you : {line}")
+            # ✅ update GUI too
+            app_state.add_message(client.username, line)
     finally:
         client.close()
+
 
 def main():
     parser = argparse.ArgumentParser(prog="lanchat-client", description="LAN chat client - Phase1")
     sub = parser.add_subparsers(dest="command", required=True)
 
     hostp = sub.add_parser("host-server", help="Host a new server/room")
-    hostp.add_argument("--name", required=True, help="Server name to create")
-    hostp.add_argument("--password", required=True, help="Password for the server (will be SHA256 hashed client-side)")
-    hostp.add_argument("--username", required=False, help="Display name for host")
-    hostp.add_argument("--host", default=DEFAULT_HOST, help="Server host to connect to (defaults to localhost)")
-    hostp.add_argument("--port", type=int, default=DEFAULT_PORT, help="Server port (defaults to 5555)")
+    hostp.add_argument("--name", required=True)
+    hostp.add_argument("--password", required=True)
+    hostp.add_argument("--username", required=False)
+    hostp.add_argument("--host", default=DEFAULT_HOST)
+    hostp.add_argument("--port", type=int, default=DEFAULT_PORT)
 
     joinp = sub.add_parser("join-server", help="Join an existing server/room")
-    joinp.add_argument("--name", required=True, help="Server name to join")
-    joinp.add_argument("--password", required=True, help="Password for server (will be SHA256 hashed client-side)")
-    joinp.add_argument("--username", required=False, help="Your display name")
-    joinp.add_argument("--host", default=DEFAULT_HOST, help="Server host to connect to (defaults to localhost)")
-    joinp.add_argument("--port", type=int, default=DEFAULT_PORT, help="Server port (defaults to 5555)")
+    joinp.add_argument("--name", required=True)
+    joinp.add_argument("--password", required=True)
+    joinp.add_argument("--username", required=False)
+    joinp.add_argument("--host", default=DEFAULT_HOST)
+    joinp.add_argument("--port", type=int, default=DEFAULT_PORT)
 
     args = parser.parse_args()
 
@@ -157,6 +193,7 @@ def main():
         command_join(args)
     else:
         parser.print_help()
+
 
 if __name__ == "__main__":
     main()
