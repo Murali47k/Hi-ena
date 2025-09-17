@@ -13,9 +13,7 @@ class GuiBridge(QObject):
     system_message = pyqtSignal(str)
     client_list_updated = pyqtSignal(list)
 
-# single global instance
 gui_bridge = GuiBridge()
-
 
 class MainWindow(QWidget):
     def __init__(self, client):
@@ -32,7 +30,7 @@ class MainWindow(QWidget):
         content_layout = QHBoxLayout()
 
         self.sidebar = Sidebar()
-        self.sidebar.setFixedWidth(200)
+        self.sidebar.setFixedWidth(250)
         content_layout.addWidget(self.sidebar)
 
         self.chat_frame = ChatFrame(self.send_message_to_server)
@@ -41,42 +39,37 @@ class MainWindow(QWidget):
         main_layout.addLayout(content_layout)
         self.setLayout(main_layout)
 
-        # ✅ Connect signals to UI updates
+        # Connect signals
         gui_bridge.message_received.connect(self.on_message_received)
         gui_bridge.system_message.connect(self.on_system_message)
         gui_bridge.client_list_updated.connect(self.on_client_list_updated)
 
-        # ✅ Optional periodic refresh (if needed)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.refresh_ui)
         self.timer.start(1000)
 
     def send_message_to_server(self, msg):
-        # send message to server safely
         if self.client:
             payload = {"message": msg}
             self.client.send(create_message("chat", payload))
             app_state.add_message(self.client.username, msg)
             self.chat_frame.refresh_messages()
 
-    # --- Signal Handlers (run on main GUI thread) ---
     def on_message_received(self, sender, msg):
         app_state.add_message(sender, msg)
         self.chat_frame.refresh_messages()
 
     def on_system_message(self, msg):
-        app_state.add_message("SYSTEM", msg)
-        self.chat_frame.refresh_messages()
+        app_state.add_system_log(msg)
+        self.sidebar.refresh()
 
     def on_client_list_updated(self, clients):
         app_state.set_clients(clients)
         self.sidebar.refresh()
 
     def refresh_ui(self):
-        # If you still want periodic refresh (UI always up-to-date)
         self.sidebar.refresh()
         self.chat_frame.refresh_messages()
-
 
 def run_gui(client):
     app = QApplication(sys.argv)
