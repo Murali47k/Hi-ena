@@ -56,6 +56,18 @@ def broadcast_to_server(server_name, sender_username, text, sender_conn=None):
             except ValueError:
                 pass
 
+def broadcast_client_list(server_name):
+    """Send updated client list to all clients in the server."""
+    with clients_lock:
+        clients = [c["username"] for c in connected_clients if c["server_name"] == server_name]
+        for c in connected_clients:
+            if c["server_name"] == server_name:
+                try:
+                    msg = create_message("clients", {"list": clients})
+                    send_json(c["conn"], msg)
+                except Exception:
+                    pass
+
 def handle_client(conn, addr):
     client_entry = {"conn": conn, "addr": addr, "username": None, "server_name": None}
     with clients_lock:
@@ -92,6 +104,7 @@ def handle_client(conn, addr):
                         auth_mgr.servers[server_name]["host"] = username  # ✅ record host
                         resp = create_message("auth_result", {"ok": True, "message": "server_created"})
                         send_json(conn, resp)
+                        broadcast_client_list(server_name)
                         print(f"[SERVER CREATED] {server_name} by {username}@{addr}")
                     else:
                         resp = create_message("auth_result", {"ok": False, "message": msg})
@@ -114,6 +127,7 @@ def handle_client(conn, addr):
                         resp = create_message("auth_result", {"ok": True, "message": "joined"})
                         send_json(conn, resp)
                         broadcast_to_server(server_name, "SYSTEM", f"{username} has joined.", sender_conn=None)
+                        broadcast_client_list(server_name)
                         print(f"[JOIN] {username} -> {server_name} from {addr}")
                     else:
                         resp = create_message("auth_result", {"ok": False, "message": msg})
@@ -146,6 +160,7 @@ def handle_client(conn, addr):
             if server_name and username:
                 auth_mgr.remove_connection(server_name, username)
                 broadcast_to_server(server_name, "SYSTEM", f"{username} has left.", sender_conn=None)
+                broadcast_client_list(server_name)
         except Exception:
             pass
 

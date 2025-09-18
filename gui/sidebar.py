@@ -32,7 +32,7 @@ class Sidebar(QWidget):
     def refresh(self):
         # Refresh clients
         self.clients_list.clear()
-        for client in app_state.clients:
+        for client in sorted(set(app_state.clients)):
             self.clients_list.addItem(client)
 
         # Refresh logs

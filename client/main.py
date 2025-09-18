@@ -10,7 +10,8 @@ import hashlib
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.utils import create_message, parse_message
-from gui.app_state import app_state  
+from gui.app_state import app_state
+from gui.main import gui_bridge 
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 5555
@@ -83,7 +84,6 @@ class Client:
             sender = pdata.get("from", "unknown")
             msg = pdata.get("message", "")
             print(f"{sender}: {msg}")
-            # ✅ Update GUI state
             app_state.add_message(sender, msg)
 
         elif ptype == "system":
@@ -92,9 +92,13 @@ class Client:
             app_state.add_message("SYSTEM", sys_msg)
 
         elif ptype == "clients":
-            # server sends updated client list
-            app_state.set_clients(pdata.get("list", []))
-
+            clients = pdata.get("list", [])
+            app_state.set_clients(clients)
+            try:
+                gui_bridge.client_list_updated.emit(clients)  # ✅ notify GUI
+            except RuntimeError:
+                # if gui not started, just ignore
+                pass
         else:
             print("[RECV]", packet)
 
