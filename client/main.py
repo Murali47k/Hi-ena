@@ -89,13 +89,17 @@ class Client:
         elif ptype == "system":
             sys_msg = pdata.get("message", "")
             print("[SYSTEM]", sys_msg)
-            app_state.add_message("SYSTEM", sys_msg)
+            app_state.add_system_log(sys_msg)
+            try:
+                gui_bridge.system_message.emit(sys_msg)
+            except RuntimeError:
+                pass
 
         elif ptype == "clients":
             clients = pdata.get("list", [])
             app_state.set_clients(clients)
             try:
-                gui_bridge.client_list_updated.emit(clients)  # ✅ notify GUI
+                gui_bridge.client_list_updated.emit(clients)  
             except RuntimeError:
                 # if gui not started, just ignore
                 pass

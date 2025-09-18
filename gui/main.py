@@ -60,8 +60,9 @@ class MainWindow(QWidget):
         self.chat_frame.refresh_messages()
 
     def on_system_message(self, msg):
-        app_state.add_system_log(msg)
+        # app_state.add_system_log(msg)
         self.sidebar.refresh()
+        self.sidebar.logs_view.verticalScrollBar().setValue(self.sidebar.logs_view.verticalScrollBar().maximum())
 
     def on_client_list_updated(self, clients):
         app_state.set_clients(clients)

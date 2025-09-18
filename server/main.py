@@ -30,7 +30,7 @@ def recv_full(conn):
         return data.decode("utf-8").strip()
     except Exception:
         return None
-
+    
 def broadcast_to_server(server_name, sender_username, text, sender_conn=None):
     """Broadcast a 'chat' message to all clients in server_name except sender."""
     with clients_lock:
@@ -56,10 +56,28 @@ def broadcast_to_server(server_name, sender_username, text, sender_conn=None):
             except ValueError:
                 pass
 
+def broadcast_system_message(server_name, text):
+    """Broadcast a system message to all clients in server_name."""
+    with clients_lock:
+        to_remove = []
+        for c in connected_clients:
+            if c["server_name"] == server_name and c["conn"] is not None:
+                try:
+                    msg = create_message("system", {"message": text})
+                    send_json(c["conn"], msg)
+                except Exception:
+                    to_remove.append(c)
+        for r in to_remove:
+            try:
+                connected_clients.remove(r)
+            except ValueError:
+                pass
+
 def broadcast_client_list(server_name):
     """Send updated client list to all clients in the server."""
     with clients_lock:
         clients = [c["username"] for c in connected_clients if c["server_name"] == server_name]
+        print(f"[DEBUG] broadcast_client_list -> connected_clients = {clients}")  # <--- add this
         for c in connected_clients:
             if c["server_name"] == server_name:
                 try:
@@ -126,7 +144,7 @@ def handle_client(conn, addr):
                         client_entry["server_name"] = server_name
                         resp = create_message("auth_result", {"ok": True, "message": "joined"})
                         send_json(conn, resp)
-                        broadcast_to_server(server_name, "SYSTEM", f"{username} has joined.", sender_conn=None)
+                        broadcast_system_message(server_name, f"{username} has joined.") 
                         broadcast_client_list(server_name)
                         print(f"[JOIN] {username} -> {server_name} from {addr}")
                     else:
@@ -153,26 +171,16 @@ def handle_client(conn, addr):
         print("[ERROR] Exception in client handler:", e)
         traceback.print_exc()
     finally:
-        print(f"[DISCONNECT] {addr}")
-        try:
-            server_name = client_entry.get("server_name")
-            username = client_entry.get("username")
-            if server_name and username:
-                auth_mgr.remove_connection(server_name, username)
-                broadcast_to_server(server_name, "SYSTEM", f"{username} has left.", sender_conn=None)
-                broadcast_client_list(server_name)
-        except Exception:
-            pass
-
         with clients_lock:
-            try:
-                connected_clients.remove(client_entry)
-            except ValueError:
-                pass
-        try:
-            conn.close()
-        except Exception:
-            pass
+            # remove based on conn (or username)
+            connected_clients[:] = [c for c in connected_clients if c["conn"] != conn]
+
+        if client_entry["username"] and client_entry["server_name"]:
+            broadcast_system_message(client_entry["server_name"], f"{client_entry['username']} has left.")
+            broadcast_client_list(client_entry["server_name"])
+
+        conn.close()
+        print(f"[DISCONNECT] {addr}")
 
 def start_server(host=HOST, port=PORT):
     server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
