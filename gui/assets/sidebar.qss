@@ -1,34 +1,45 @@
 /* -------------------- Sidebar -------------------- */
 QWidget {
-    background-color: #2F3136;
-    color: #DCDEE1;
+    background-color: #0D1318; /* Very Dark Blue for the sidebar container */
+    color: #E6E8E6;
 }
 
+/* Sidebar Headings */
+QLabel {
+    background-color: #1D3141; /* Dark Blue for a distinct heading background */
+    color: #FFFFFF;
+    font-weight: 700;
+    font-size: 16px;
+    padding: 10px 15px;
+    border-bottom: 2px solid #C21E23; /* A bold red line to separate the heading */
+}
+
+/* Online Users List */
 QListWidget {
-    background-color: #2F3136;
-    color: #DCDEE1;
+    background-color: #0D1318; /* Very Dark Blue for the list background */
+    color: #E6E8E6;
     border: none;
     padding: 5px;
-    outline: 0; /* Remove the ugly dotted focus outline */
+    outline: 0;
 }
 
 QListWidget::item {
-    padding: 8px 10px; /* More padding for better spacing */
+    padding: 8px 10px;
     margin-bottom: 2px;
 }
 
 QListWidget::item:selected {
-    background-color: #7289DA;
-    color: #FFFFFF;
+    background-color: #7CBBC2; /* Light blue for the selected user */
+    color: #0D1318; /* Dark text on light background */
     border-radius: 5px;
 }
 
-/* Style for the system logs text edit */
+/* System Logs Panel */
 QTextEdit {
-    background-color: #232428;
-    color: #B0B3B8;
+    background-color: #1D3141; /* Dark Blue, different from the list for separation */
+    color: #7CBBC2;
+    border-top: 1px solid #7CBBC2; /* A subtle light blue line to separate from the list */
     border-radius: 5px;
     font-size: 12px;
     padding: 5px;
-    border: none; /* Make it borderless */
 }

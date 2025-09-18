@@ -2,48 +2,47 @@
 QWidget {
     font-family: "Segoe UI", "Roboto", sans-serif;
     font-size: 14px;
-    color: #DCDEE1; /* Softer white for better readability */
-    background-color: #36393F; /* Main window background color */
+    color: #E6E8E6; /* Default text color, off-white for dark backgrounds */
+    background-color: #1D3141; /* Main window background: Dark Blue */
 }
 
 /* -------------------- Scrollbars -------------------- */
 QScrollBar:vertical {
     border: none;
-    background: #2C2F33;
+    background: #0D1318; /* Very Dark Blue for scrollbar track */
     width: 10px;
     margin: 0;
     border-radius: 5px;
 }
 
 QScrollBar::handle:vertical {
-    background: #7289DA;
+    background: #7CBBC2; /* Light Blue for handle */
     min-height: 20px;
     border-radius: 5px;
 }
 
 QScrollBar::handle:vertical:hover {
-    background: #5B6EAE;
+    background: #C21E23; /* Red accent on hover */
 }
 
 QScrollBar::add-line, QScrollBar::sub-line {
     height: 0px;
 }
 
-/* Add horizontal scrollbar styling for consistency */
 QScrollBar:horizontal {
     border: none;
-    background: #2C2F33;
+    background: #0D1318;
     height: 10px;
     margin: 0;
     border-radius: 5px;
 }
 
 QScrollBar::handle:horizontal {
-    background: #7289DA;
+    background: #7CBBC2;
     min-width: 20px;
     border-radius: 5px;
 }
 
 QScrollBar::handle:horizontal:hover {
-    background: #5B6EAE;
+    background: #C21E23;
 }
