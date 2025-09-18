@@ -1,0 +1,49 @@
+/* -------------------- Common -------------------- */
+QWidget {
+    font-family: "Segoe UI", "Roboto", sans-serif;
+    font-size: 14px;
+    color: #DCDEE1; /* Softer white for better readability */
+    background-color: #36393F; /* Main window background color */
+}
+
+/* -------------------- Scrollbars -------------------- */
+QScrollBar:vertical {
+    border: none;
+    background: #2C2F33;
+    width: 10px;
+    margin: 0;
+    border-radius: 5px;
+}
+
+QScrollBar::handle:vertical {
+    background: #7289DA;
+    min-height: 20px;
+    border-radius: 5px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background: #5B6EAE;
+}
+
+QScrollBar::add-line, QScrollBar::sub-line {
+    height: 0px;
+}
+
+/* Add horizontal scrollbar styling for consistency */
+QScrollBar:horizontal {
+    border: none;
+    background: #2C2F33;
+    height: 10px;
+    margin: 0;
+    border-radius: 5px;
+}
+
+QScrollBar::handle:horizontal {
+    background: #7289DA;
+    min-width: 20px;
+    border-radius: 5px;
+}
+
+QScrollBar::handle:horizontal:hover {
+    background: #5B6EAE;
+}

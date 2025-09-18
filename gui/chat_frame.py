@@ -1,14 +1,18 @@
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QTextEdit, QLineEdit, QPushButton, QHBoxLayout
 from gui.app_state import app_state
+import os
+
+script_dir = os.path.dirname(os.path.abspath(__file__))
+style_path = os.path.join(script_dir, "assets", "chatframe.qss")
 
 class ChatFrame(QWidget):
     def __init__(self, send_callback):
         super().__init__()
         layout = QVBoxLayout()
-
+        with open(style_path, "r") as f:
+            self.setStyleSheet(f.read())
         self.messages_view = QTextEdit()
         self.messages_view.setReadOnly(True)
-        self.messages_view.setStyleSheet("background-color: #36393F; color: white;")
         layout.addWidget(self.messages_view)
 
         # input row

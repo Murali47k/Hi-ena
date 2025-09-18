@@ -6,6 +6,8 @@ from gui.sidebar import Sidebar
 from gui.chat_frame import ChatFrame
 from gui.app_state import app_state
 from core.utils import create_message
+import os
+
 
 # 🔗 Thread-safe bridge between Client threads and GUI
 class GuiBridge(QObject):
@@ -15,12 +17,16 @@ class GuiBridge(QObject):
 
 gui_bridge = GuiBridge()
 
+script_dir = os.path.dirname(os.path.abspath(__file__))
+style_path = os.path.join(script_dir, "assets", "style.qss")
+
 class MainWindow(QWidget):
     def __init__(self, client):
         super().__init__()
         self.client = client
-        self.setWindowTitle("HI-ENA Chat")
-        self.setStyleSheet("background-color: #36393F;")
+        self.setWindowTitle("HI-ENA")
+        with open(style_path, "r") as f:
+            self.setStyleSheet(f.read())
         self.resize(900, 600)
 
         main_layout = QVBoxLayout()

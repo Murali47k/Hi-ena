@@ -1,0 +1,12 @@
+/* -------------------- TopBar -------------------- */
+QWidget {
+    background-color: #2F3136; /* Match the sidebar for a unified look */
+    border-bottom: 1px solid #2C2F33; /* Subtle separation line */
+}
+
+QLabel {
+    color: #FFFFFF;
+    font-weight: 700;
+    font-size: 18px; /* Slightly larger for a stronger title */
+    padding: 10px 15px; /* Add some padding for visual space */
+}
