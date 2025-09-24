@@ -1,7 +1,7 @@
 # gui/chatframe.py
 from PyQt5.QtWidgets import (
-    QWidget, QLabel, QVBoxLayout, QScrollArea, QLineEdit, QPushButton, 
-    QHBoxLayout, QApplication, QMenu
+    QWidget, QLabel, QVBoxLayout, QScrollArea, QLineEdit, QPushButton,
+    QHBoxLayout, QApplication, QMenu, QTextEdit
 )
 from PyQt5.QtCore import Qt
 from gui.app_state import app_state
@@ -84,10 +84,20 @@ class ChatFrame(QWidget):
 
         # Input layout
         input_layout = QHBoxLayout()
-        self.entry = QLineEdit()
-        self.entry.setPlaceholderText("Type a message...")
+        self.entry = QTextEdit()
+        # self.entry.setPlaceholderText("Type a message...")
+        self.entry.setFixedHeight(30)  # initial small height
+        self.entry.setMinimumHeight(30)
+        self.entry.setMaximumHeight(120)  # expand until max height
+        self.entry.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.entry.setWordWrapMode(True)
+
+        # Auto-resize as user types
+        self.entry.textChanged.connect(self._adjust_textedit_height)
+
         send_button = QPushButton("Send")
         send_button.clicked.connect(self._on_send)
+
         input_layout.addWidget(self.entry)
         input_layout.addWidget(send_button)
         main_layout.addLayout(input_layout)
@@ -117,8 +127,16 @@ class ChatFrame(QWidget):
 
     def _on_send(self):
         """Send message and refresh chat."""
-        text = self.entry.text().strip()
+        text = self.entry.toPlainText().strip()
         if text:
             self.send_callback(text)
             self.entry.clear()
             self.refresh_messages()
+
+    def _adjust_textedit_height(self):
+        doc_height = self.entry.document().size().height()
+        new_height = int(doc_height + 10)  # some padding
+        if new_height < 120:  # up to max height
+            self.entry.setFixedHeight(new_height)
+        else:
+            self.entry.setFixedHeight(120)
