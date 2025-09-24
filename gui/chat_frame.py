@@ -1,7 +1,7 @@
-# gui/chatframe.py
+# gui/chat_frame.py
 from PyQt5.QtWidgets import (
     QWidget, QLabel, QVBoxLayout, QScrollArea, QLineEdit, QPushButton,
-    QHBoxLayout, QApplication, QMenu, QTextEdit
+    QHBoxLayout, QApplication, QMenu, QTextEdit, QFileDialog
 )
 from PyQt5.QtCore import Qt
 from gui.app_state import app_state
@@ -9,6 +9,7 @@ import os
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 style_path = os.path.join(script_dir, "assets", "chatframe.qss")
+
 
 class ChatBubble(QWidget):
     """Individual chat bubble widget with sender name, left/right alignment, and copy-on-double-click."""
@@ -59,10 +60,44 @@ class ChatBubble(QWidget):
                 color: #1F2A38;                /* Dark text when selected */
             }
         """)
-        copy_action = menu.addAction("📋 Copy")  # optional: add emoji/icon
+        copy_action = menu.addAction("📋 Copy")
         action = menu.exec_(event.globalPos())
         if action == copy_action:
             QApplication.clipboard().setText(self.text)
+
+
+class FileBubble(ChatBubble):
+    """Special bubble for file messages with hover-based Download button."""
+    def __init__(self, filename, filesize, sender_name="me", parent=None):
+        text = f"📄 {filename} ({filesize // 1024} KB)"
+        super().__init__(text, sender_name=sender_name, parent=parent)
+
+        # Download button
+        self.download_btn = QPushButton("⬇ Download", self)
+        self.download_btn.hide()
+        self.download_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4ECDC4;
+                color: #1F2A38;
+                border-radius: 10px;
+                padding: 4px 8px;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background-color: #FF6B6B;
+                color: white;
+            }
+        """)
+
+        layout = self.layout()
+        layout.addWidget(self.download_btn, alignment=Qt.AlignRight)
+
+    def enterEvent(self, event):
+        self.download_btn.show()
+
+    def leaveEvent(self, event):
+        self.download_btn.hide()
+
 
 class ChatFrame(QWidget):
     """Main chat frame with scrollable bubbles and input field."""
@@ -85,10 +120,9 @@ class ChatFrame(QWidget):
         # Input layout
         input_layout = QHBoxLayout()
         self.entry = QTextEdit()
-        # self.entry.setPlaceholderText("Type a message...")
-        self.entry.setFixedHeight(30)  # initial small height
+        self.entry.setFixedHeight(30)
         self.entry.setMinimumHeight(30)
-        self.entry.setMaximumHeight(120)  # expand until max height
+        self.entry.setMaximumHeight(120)
         self.entry.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.entry.setWordWrapMode(True)
 
@@ -98,8 +132,12 @@ class ChatFrame(QWidget):
         send_button = QPushButton("Send")
         send_button.clicked.connect(self._on_send)
 
+        file_button = QPushButton("Send File")
+        file_button.clicked.connect(self._on_send_file)
+
         input_layout.addWidget(self.entry)
         input_layout.addWidget(send_button)
+        input_layout.addWidget(file_button)
         main_layout.addLayout(input_layout)
 
         self.setLayout(main_layout)
@@ -113,11 +151,18 @@ class ChatFrame(QWidget):
             if widget:
                 widget.setParent(None)
 
-        # Add new messages as ChatBubble
+        # Add new messages as ChatBubble or FileBubble
         for username, message in app_state.messages:
             sender_type = "me" if hasattr(self.send_callback, "__self__") and \
                 username == self.send_callback.__self__.client.username else username
-            bubble = ChatBubble(message, sender_name=sender_type)
+
+            if isinstance(message, dict) and message.get("type") == "file":
+                filename = os.path.basename(message["path"])
+                filesize = os.path.getsize(message["path"])
+                bubble = FileBubble(filename, filesize, sender_name=sender_type)
+            else:
+                bubble = ChatBubble(message, sender_name=sender_type)
+
             self.scroll_layout.addWidget(bubble)
 
         # Auto scroll to bottom
@@ -126,17 +171,25 @@ class ChatFrame(QWidget):
         )
 
     def _on_send(self):
-        """Send message and refresh chat."""
+        """Send text message and refresh chat."""
         text = self.entry.toPlainText().strip()
         if text:
             self.send_callback(text)
             self.entry.clear()
             self.refresh_messages()
 
+    def _on_send_file(self):
+        """Send selected files and refresh chat."""
+        files, _ = QFileDialog.getOpenFileNames(self, "Select files")
+        for filepath in files:
+            if filepath:
+                self.send_callback({"type": "file", "path": filepath})
+        self.refresh_messages()
+
     def _adjust_textedit_height(self):
         doc_height = self.entry.document().size().height()
-        new_height = int(doc_height + 10)  # some padding
-        if new_height < 120:  # up to max height
+        new_height = int(doc_height + 10)
+        if new_height < 120:
             self.entry.setFixedHeight(new_height)
         else:
             self.entry.setFixedHeight(120)
