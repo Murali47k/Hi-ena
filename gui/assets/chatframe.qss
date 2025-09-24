@@ -35,43 +35,28 @@ QPushButton:pressed {
 
 /* -------------------- Chat Bubble -------------------- */
 ChatBubble QLabel {
-    border-radius: 12px;
-    padding: 8px;
+    border-radius: 14px;
+    padding: 10px 14px;
     font-size: 14px;
 }
 
 /* Bubble for self (right-aligned) */
 ChatBubble[right="true"] QLabel {
-    background-color: #4E9FFF; /* Bright blue for self */
-    color: white;
+    background-color: #4ECDC4; /* Aqua-teal, matches hover accent */
+    color: #ffffffff;
 }
 
 /* Bubble for others (left-aligned) */
 ChatBubble[right="false"] QLabel {
-    background-color: #ECECEC; /* Light gray for others */
-    color: #1F2A38; /* Dark text */
+    background-color: #2E3A4A; /* Muted slate blue-gray */
+    color: #E0E0E0; /* Softer light gray for text */
 }
 
 /* Sender name above bubble */
 ChatBubble QLabel#senderName {
     font-size: 10px;
-    color: #A0A0A0; /* Soft gray for sender names */
+    font-weight:bold
+    color: #ffffffff; /* Subtle muted gray-blue for names */
     margin-bottom: 2px;
 }
 
-/* -------------------- Copy Menu -------------------- */
-ChatBubble QMenu {
-    background-color: #1F2A38; /* Matches chat background */
-    color: white;
-    border: 1px solid #FF6B6B;
-    padding: 2px;
-}
-
-ChatBubble QMenu::item {
-    min-width: 20px; /* slightly reduced width for small menu */
-    padding: 2px 6px;
-}
-
-ChatBubble QMenu::item:selected {
-    background-color: #FF6B6B;
-}

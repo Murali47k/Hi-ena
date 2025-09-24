@@ -40,11 +40,29 @@ class ChatBubble(QWidget):
     def mouseDoubleClickEvent(self, event):
         """Show small copy menu on double click."""
         menu = QMenu()
-        copy_action = menu.addAction("Copy")
+
+        # 🔹 Apply custom style to Copy menu
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #1F2A38;     /* Dark background to match chat */
+                color: white;                  /* White text */
+                border: 1px solid #FF6B6B;     /* Coral border for highlight */
+                padding: 4px;
+            }
+            QMenu::item {
+                background-color: transparent;
+                padding: 6px 12px;
+                border-radius: 6px;
+            }
+            QMenu::item:selected {
+                background-color: #4ECDC4;     /* Aqua highlight */
+                color: #1F2A38;                /* Dark text when selected */
+            }
+        """)
+        copy_action = menu.addAction("📋 Copy")  # optional: add emoji/icon
         action = menu.exec_(event.globalPos())
         if action == copy_action:
             QApplication.clipboard().setText(self.text)
-
 
 class ChatFrame(QWidget):
     """Main chat frame with scrollable bubbles and input field."""
