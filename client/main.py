@@ -12,7 +12,8 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.utils import create_message, parse_message
 from gui.app_state import app_state
 from gui.main import gui_bridge 
-from client import file_transfer
+from client.file_transfer import FileReceiver
+file_receiver = FileReceiver()
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 5555
@@ -104,53 +105,33 @@ class Client:
             try:
                 gui_bridge.client_list_updated.emit(clients)
             except RuntimeError:
-                # if gui not started, just ignore
                 pass
 
-        elif ptype == "file_request":
-            """Peer requested a file → start sending it."""
-            filename = pdata.get("filename")
-            if filename:
-                filepath = os.path.join(app_state.shared_dir, filename)  # assume shared_dir contains files
-                if os.path.exists(filepath):
-                    print(f"[FILE REQUEST] Sending {filename}...")
-                    try:
-                        file_transfer.send_file_offer(self, filepath)
-                        file_transfer.send_file_chunks(self, filepath)
-                    except Exception as e:
-                        print(f"[FILE REQUEST ERROR] {e}")
-                else:
-                    print(f"[FILE REQUEST] File not found: {filename}")
-
+        # ---------- FILE TRANSFER HANDLING ----------
         elif ptype in ("file_offer", "file_chunk", "file_complete"):
-            if not hasattr(self, "_download_state"):
-                self._download_state = {}
+            sender = packet.get("from", "unknown")
+            filename = pdata.get("filename", "unknown")
 
-            if ptype == "file_chunk":
-                file_transfer.receive_file_chunk(self._download_state, pdata)
+            if ptype == "file_offer":
+                size = pdata.get("filesize", 0)
+                print(f"[FILE OFFER] {sender} is sending {filename} ({size // 1024} KB)")
+
+            elif ptype == "file_chunk":
+                file_receiver.receive_chunk(pdata)
 
             elif ptype == "file_complete":
-                saved_path = file_transfer.finalize_file(self._download_state, pdata)
-                print(f"[FILE COMPLETE] Saved to {saved_path}")
-                # show in GUI
-                sender = packet.get("from", "unknown")
-                app_state.add_message(sender, {
-                    "type": "file",
-                    "filename": os.path.basename(saved_path),
-                    "filesize": os.path.getsize(saved_path),
-                })
-                try:
-                    gui_bridge.messages_updated.emit()
-                except RuntimeError:
-                    pass
-
-            elif ptype == "file_offer":
-                sender = packet.get("from", "unknown")
-                filename = pdata["filename"]
-                size = pdata["filesize"]
-                msg = f"{sender} is sending {filename} ({size//1024} KB)"
-                print("[FILE OFFER]", msg)
-
+                saved_path = file_receiver.finalize_file(pdata)
+                if saved_path:
+                    print(f"[FILE COMPLETE] Saved to {saved_path}")
+                    app_state.add_message(sender, {
+                        "type": "file",
+                        "filename": os.path.basename(saved_path),
+                        "filesize": os.path.getsize(saved_path),
+                    })
+                    try:
+                        gui_bridge.messages_updated.emit()
+                    except RuntimeError:
+                        pass
         else:
             print("[RECV]", packet)
 

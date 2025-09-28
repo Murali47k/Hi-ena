@@ -1,11 +1,11 @@
 from PyQt5.QtWidgets import (
     QWidget, QLabel, QVBoxLayout, QScrollArea, QLineEdit, QPushButton,
-    QHBoxLayout, QApplication, QMenu, QTextEdit, QFileDialog
+    QHBoxLayout, QApplication, QMenu, QTextEdit, QFileDialog, QProgressBar
 )
 from PyQt5.QtCore import Qt
 from gui.app_state import app_state
 import os
-from client import file_transfer
+from client.file_transfer import FileSenderThread, FileReceiver
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 style_path = os.path.join(script_dir, "assets", "chatframe.qss")
@@ -41,13 +41,11 @@ class ChatBubble(QWidget):
     def mouseDoubleClickEvent(self, event):
         """Show small copy menu on double click."""
         menu = QMenu()
-
-        # 🔹 Apply custom style to Copy menu
         menu.setStyleSheet("""
             QMenu {
-                background-color: #1F2A38;     /* Dark background to match chat */
-                color: white;                  /* White text */
-                border: 1px solid #FF6B6B;     /* Coral border for highlight */
+                background-color: #1F2A38;
+                color: white;
+                border: 1px solid #FF6B6B;
                 padding: 4px;
             }
             QMenu::item {
@@ -56,8 +54,8 @@ class ChatBubble(QWidget):
                 border-radius: 6px;
             }
             QMenu::item:selected {
-                background-color: #4ECDC4;     /* Aqua highlight */
-                color: #1F2A38;                /* Dark text when selected */
+                background-color: #4ECDC4;
+                color: #1F2A38;
             }
         """)
         copy_action = menu.addAction("📋 Copy")
@@ -67,7 +65,7 @@ class ChatBubble(QWidget):
 
 
 class FileBubble(ChatBubble):
-    """Special bubble for file messages with hover-based Download button."""
+    """Special bubble for file messages with hover Download button + progress bar."""
     def __init__(self, filename, filesize, sender_name="me", parent=None, client=None):
         text = f"📄 {filename} ({filesize // 1024} KB)"
         super().__init__(text, sender_name=sender_name, parent=parent)
@@ -75,6 +73,11 @@ class FileBubble(ChatBubble):
         self.filename = filename
         self.filesize = filesize
         self.client = client
+
+        # Progress bar
+        self.progress_bar = QProgressBar(self)
+        self.progress_bar.setValue(0)
+        self.progress_bar.hide()
 
         # Download button
         self.download_btn = QPushButton("⬇ Download", self)
@@ -95,6 +98,7 @@ class FileBubble(ChatBubble):
         self.download_btn.clicked.connect(self._on_download_clicked)
 
         layout = self.layout()
+        layout.addWidget(self.progress_bar)
         layout.addWidget(self.download_btn, alignment=Qt.AlignRight)
 
     def enterEvent(self, event):
@@ -104,13 +108,16 @@ class FileBubble(ChatBubble):
         self.download_btn.hide()
 
     def _on_download_clicked(self):
-        """Trigger file_request when Download is clicked."""
         if self.client:
             self.client.send({
                 "type": "file_request",
                 "data": {"filename": self.filename}
             })
             print(f"[REQUESTED FILE] {self.filename}")
+
+    def update_progress(self, pct):
+        self.progress_bar.show()
+        self.progress_bar.setValue(pct)
 
 
 class ChatFrame(QWidget):
@@ -122,8 +129,10 @@ class ChatFrame(QWidget):
             self.setStyleSheet(f.read())
 
         self.client = app_state.get_client()
+        self.file_receiver = FileReceiver()
+        self.file_receiver.progress.connect(self._on_receive_progress)
 
-        # Scroll area for messages
+        # Scroll area
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_content = QWidget()
@@ -141,8 +150,6 @@ class ChatFrame(QWidget):
         self.entry.setMaximumHeight(120)
         self.entry.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.entry.setWordWrapMode(True)
-
-        # Auto-resize as user types
         self.entry.textChanged.connect(self._adjust_textedit_height)
 
         send_button = QPushButton("Send")
@@ -159,15 +166,16 @@ class ChatFrame(QWidget):
         self.setLayout(main_layout)
         self.send_callback = send_callback
 
+        # filename -> bubble mapping
+        self._file_bubbles = {}
+
     def refresh_messages(self):
         """Refresh chat bubbles from app_state messages."""
-        # Clear old widgets
         for i in reversed(range(self.scroll_layout.count())):
             widget = self.scroll_layout.itemAt(i).widget()
             if widget:
                 widget.setParent(None)
 
-        # Add new messages as ChatBubble or FileBubble
         for username, message in app_state.messages:
             sender_type = "me" if username == app_state.get_username() else username
 
@@ -175,18 +183,17 @@ class ChatFrame(QWidget):
                 filename = message["filename"]
                 filesize = message["filesize"]
                 bubble = FileBubble(filename, filesize, sender_name=sender_type, client=self.client)
+                self._file_bubbles[filename] = bubble
             else:
                 bubble = ChatBubble(message, sender_name=sender_type)
 
             self.scroll_layout.addWidget(bubble)
 
-        # Auto scroll to bottom
         self.scroll_area.verticalScrollBar().setValue(
             self.scroll_area.verticalScrollBar().maximum()
         )
 
     def _on_send(self):
-        """Send text message and refresh chat."""
         text = self.entry.toPlainText().strip()
         if text:
             self.send_callback(text)
@@ -194,29 +201,33 @@ class ChatFrame(QWidget):
             self.refresh_messages()
 
     def _on_send_file(self):
-        """Pick a file and send it in chunks."""
         filepath, _ = QFileDialog.getOpenFileName(self, "Select File to Send")
-        if filepath:
-            filesize = os.path.getsize(filepath)
-            filename = os.path.basename(filepath)
-            sender = app_state.get_username() or "me"
+        if not filepath:
+            return
 
-            # Store message in app_state for GUI
-            app_state.messages.append((
-                sender,
-                {"type": "file", "filename": filename, "filesize": filesize}
-            ))
+        sender = app_state.get_username() or "me"
+        filesize = os.path.getsize(filepath)
+        filename = os.path.basename(filepath)
 
-            # Actually send via file_transfer
-            file_transfer.send_file_offer(self.client, filepath)
-            file_transfer.send_file_chunks(self.client, filepath)
+        # Add file message to GUI
+        app_state.messages.append((sender, {"type": "file", "filename": filename, "filesize": filesize}))
+        self.refresh_messages()
 
-            self.refresh_messages()
+        # Send file via QThread with progress
+        client = self.client
+        if client:
+            self.file_thread = FileSenderThread(client, filepath)
+            if filename in self._file_bubbles:
+                self.file_thread.progress.connect(lambda pct: self._file_bubbles[filename].update_progress(pct))
+            self.file_thread.finished.connect(lambda f: print(f"[FILE SENT] {f}"))
+            self.file_thread.error.connect(lambda e: print(f"[FILE SEND ERROR] {e}"))
+            self.file_thread.start()
+
+    def _on_receive_progress(self, filename, pct):
+        if filename in self._file_bubbles:
+            self._file_bubbles[filename].update_progress(pct)
 
     def _adjust_textedit_height(self):
         doc_height = self.entry.document().size().height()
         new_height = int(doc_height + 10)
-        if new_height < 120:
-            self.entry.setFixedHeight(new_height)
-        else:
-            self.entry.setFixedHeight(120)
+        self.entry.setFixedHeight(min(new_height, 120))
