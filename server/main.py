@@ -5,6 +5,7 @@ import traceback
 
 from core.utils import create_message, parse_message
 from server.auth import AuthManager
+from server import file_transfer
 
 HOST = "0.0.0.0"
 PORT = 5555
@@ -162,6 +163,10 @@ def handle_client(conn, addr):
                     else:
                         resp = create_message("system", {"message": "not_in_server"})
                         send_json(conn, resp)
+
+                elif ptype in ("file_offer", "file_chunk", "file_complete"):
+                    file_transfer.handle_file_message(packet, client_entry, connected_clients, clients_lock)
+
 
                 else:
                     resp = create_message("system", {"message": "unknown_type"})

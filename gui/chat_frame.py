@@ -1,4 +1,3 @@
-# gui/chat_frame.py
 from PyQt5.QtWidgets import (
     QWidget, QLabel, QVBoxLayout, QScrollArea, QLineEdit, QPushButton,
     QHBoxLayout, QApplication, QMenu, QTextEdit, QFileDialog
@@ -6,6 +5,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt
 from gui.app_state import app_state
 import os
+from client import file_transfer
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 style_path = os.path.join(script_dir, "assets", "chatframe.qss")
@@ -68,9 +68,13 @@ class ChatBubble(QWidget):
 
 class FileBubble(ChatBubble):
     """Special bubble for file messages with hover-based Download button."""
-    def __init__(self, filename, filesize, sender_name="me", parent=None):
+    def __init__(self, filename, filesize, sender_name="me", parent=None, client=None):
         text = f"📄 {filename} ({filesize // 1024} KB)"
         super().__init__(text, sender_name=sender_name, parent=parent)
+
+        self.filename = filename
+        self.filesize = filesize
+        self.client = client
 
         # Download button
         self.download_btn = QPushButton("⬇ Download", self)
@@ -88,6 +92,7 @@ class FileBubble(ChatBubble):
                 color: white;
             }
         """)
+        self.download_btn.clicked.connect(self._on_download_clicked)
 
         layout = self.layout()
         layout.addWidget(self.download_btn, alignment=Qt.AlignRight)
@@ -98,14 +103,25 @@ class FileBubble(ChatBubble):
     def leaveEvent(self, event):
         self.download_btn.hide()
 
+    def _on_download_clicked(self):
+        """Trigger file_request when Download is clicked."""
+        if self.client:
+            self.client.send({
+                "type": "file_request",
+                "data": {"filename": self.filename}
+            })
+            print(f"[REQUESTED FILE] {self.filename}")
+
 
 class ChatFrame(QWidget):
     """Main chat frame with scrollable bubbles and input field."""
-    def __init__(self, send_callback):
+    def __init__(self, send_callback, client=None):
         super().__init__()
         main_layout = QVBoxLayout()
         with open(style_path, "r") as f:
             self.setStyleSheet(f.read())
+
+        self.client = app_state.get_client()
 
         # Scroll area for messages
         self.scroll_area = QScrollArea()
@@ -153,13 +169,12 @@ class ChatFrame(QWidget):
 
         # Add new messages as ChatBubble or FileBubble
         for username, message in app_state.messages:
-            sender_type = "me" if hasattr(self.send_callback, "__self__") and \
-                username == self.send_callback.__self__.client.username else username
+            sender_type = "me" if username == app_state.get_username() else username
 
             if isinstance(message, dict) and message.get("type") == "file":
-                filename = os.path.basename(message["path"])
-                filesize = os.path.getsize(message["path"])
-                bubble = FileBubble(filename, filesize, sender_name=sender_type)
+                filename = message["filename"]
+                filesize = message["filesize"]
+                bubble = FileBubble(filename, filesize, sender_name=sender_type, client=self.client)
             else:
                 bubble = ChatBubble(message, sender_name=sender_type)
 
@@ -179,12 +194,24 @@ class ChatFrame(QWidget):
             self.refresh_messages()
 
     def _on_send_file(self):
-        """Send selected files and refresh chat."""
-        files, _ = QFileDialog.getOpenFileNames(self, "Select files")
-        for filepath in files:
-            if filepath:
-                self.send_callback({"type": "file", "path": filepath})
-        self.refresh_messages()
+        """Pick a file and send it in chunks."""
+        filepath, _ = QFileDialog.getOpenFileName(self, "Select File to Send")
+        if filepath:
+            filesize = os.path.getsize(filepath)
+            filename = os.path.basename(filepath)
+            sender = app_state.get_username() or "me"
+
+            # Store message in app_state for GUI
+            app_state.messages.append((
+                sender,
+                {"type": "file", "filename": filename, "filesize": filesize}
+            ))
+
+            # Actually send via file_transfer
+            file_transfer.send_file_offer(self.client, filepath)
+            file_transfer.send_file_chunks(self.client, filepath)
+
+            self.refresh_messages()
 
     def _adjust_textedit_height(self):
         doc_height = self.entry.document().size().height()

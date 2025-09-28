@@ -12,6 +12,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.utils import create_message, parse_message
 from gui.app_state import app_state
 from gui.main import gui_bridge 
+from client import file_transfer
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 5555
@@ -79,6 +80,8 @@ class Client:
 
         if ptype == "auth_result":
             print("[AUTH]", pdata)
+            if pdata.get("success"):
+                app_state.set_username(pdata.get("username"))
 
         elif ptype == "chat":
             sender = pdata.get("from", "unknown")
@@ -99,12 +102,58 @@ class Client:
             clients = pdata.get("list", [])
             app_state.set_clients(clients)
             try:
-                gui_bridge.client_list_updated.emit(clients)  
+                gui_bridge.client_list_updated.emit(clients)
             except RuntimeError:
                 # if gui not started, just ignore
                 pass
+
+        elif ptype == "file_request":
+            """Peer requested a file → start sending it."""
+            filename = pdata.get("filename")
+            if filename:
+                filepath = os.path.join(app_state.shared_dir, filename)  # assume shared_dir contains files
+                if os.path.exists(filepath):
+                    print(f"[FILE REQUEST] Sending {filename}...")
+                    try:
+                        file_transfer.send_file_offer(self, filepath)
+                        file_transfer.send_file_chunks(self, filepath)
+                    except Exception as e:
+                        print(f"[FILE REQUEST ERROR] {e}")
+                else:
+                    print(f"[FILE REQUEST] File not found: {filename}")
+
+        elif ptype in ("file_offer", "file_chunk", "file_complete"):
+            if not hasattr(self, "_download_state"):
+                self._download_state = {}
+
+            if ptype == "file_chunk":
+                file_transfer.receive_file_chunk(self._download_state, pdata)
+
+            elif ptype == "file_complete":
+                saved_path = file_transfer.finalize_file(self._download_state, pdata)
+                print(f"[FILE COMPLETE] Saved to {saved_path}")
+                # show in GUI
+                sender = packet.get("from", "unknown")
+                app_state.add_message(sender, {
+                    "type": "file",
+                    "filename": os.path.basename(saved_path),
+                    "filesize": os.path.getsize(saved_path),
+                })
+                try:
+                    gui_bridge.messages_updated.emit()
+                except RuntimeError:
+                    pass
+
+            elif ptype == "file_offer":
+                sender = packet.get("from", "unknown")
+                filename = pdata["filename"]
+                size = pdata["filesize"]
+                msg = f"{sender} is sending {filename} ({size//1024} KB)"
+                print("[FILE OFFER]", msg)
+
         else:
             print("[RECV]", packet)
+
 
     def close(self):
         self.listening = False
@@ -121,6 +170,8 @@ def command_host(args, use_gui=False):
     client.username = args.username or "host"
     if not client.connect():
         return
+
+    app_state.set_client(client) 
 
     password_hash = sha256_hex(args.password)
     payload = create_message("host", {
@@ -155,6 +206,8 @@ def command_join(args, use_gui=False):
     client.username = args.username or "guest"
     if not client.connect():
         return
+
+    app_state.set_client(client) 
 
     password_hash = sha256_hex(args.password)
     payload = create_message("join", {
