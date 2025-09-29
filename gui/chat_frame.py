@@ -256,3 +256,4 @@ class ChatFrame(QWidget):
         doc_height = self.entry.document().size().height()
         new_height = int(doc_height + 10)
         self.entry.setFixedHeight(min(new_height, 120))
+

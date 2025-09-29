@@ -87,3 +87,4 @@ def run_gui(client):
     window = MainWindow(client)
     window.show()
     sys.exit(app.exec_())
+
