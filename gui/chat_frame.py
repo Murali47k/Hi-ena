@@ -1,3 +1,4 @@
+# gui/chat_frame.py
 from PyQt5.QtWidgets import (
     QWidget, QLabel, QVBoxLayout, QScrollArea, QLineEdit, QPushButton,
     QHBoxLayout, QApplication, QMenu, QTextEdit, QFileDialog, QProgressBar
@@ -5,7 +6,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt
 from gui.app_state import app_state
 import os
-from client.file_transfer import FileSenderThread, FileReceiver
+from client.file_transfer import FileSenderThread, file_receiver, DownloadThread
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 style_path = os.path.join(script_dir, "assets", "chatframe.qss")
@@ -73,6 +74,7 @@ class FileBubble(ChatBubble):
         self.filename = filename
         self.filesize = filesize
         self.client = client
+        self.download_thread = None
 
         # Progress bar
         self.progress_bar = QProgressBar(self)
@@ -108,12 +110,23 @@ class FileBubble(ChatBubble):
         self.download_btn.hide()
 
     def _on_download_clicked(self):
-        if self.client:
-            self.client.send({
-                "type": "file_request",
-                "data": {"filename": self.filename}
-            })
-            print(f"[REQUESTED FILE] {self.filename}")
+        """
+        Download: copy file from hidden save-dir (~/.Hiena-Downloads) to ~/Downloads
+        (handled in a QThread to avoid blocking UI).
+        """
+        # find source path in the shared receiver save folder
+        src = file_receiver.find_saved_path(self.filename)
+        if not src:
+            print(f"[DOWNLOAD ERROR] file not found in hidden store: {self.filename}")
+            # optionally: request from server (not implemented currently)
+            return
+
+        dst_dir = os.path.join(os.path.expanduser("~"), "Downloads")
+        self.download_thread = DownloadThread(src, dst_dir=dst_dir)
+        self.download_thread.progress.connect(lambda pct: self.update_progress(pct))
+        self.download_thread.finished.connect(lambda dst: print(f"[DOWNLOADED] {dst}"))
+        self.download_thread.error.connect(lambda e: print(f"[DOWNLOAD ERROR] {e}"))
+        self.download_thread.start()
 
     def update_progress(self, pct):
         self.progress_bar.show()
@@ -128,8 +141,9 @@ class ChatFrame(QWidget):
         with open(style_path, "r") as f:
             self.setStyleSheet(f.read())
 
+        # Use the shared receiver instance (so network events reach GUI)
         self.client = app_state.get_client()
-        self.file_receiver = FileReceiver()
+        self.file_receiver = file_receiver
         self.file_receiver.progress.connect(self._on_receive_progress)
 
         # Scroll area
@@ -166,16 +180,20 @@ class ChatFrame(QWidget):
         self.setLayout(main_layout)
         self.send_callback = send_callback
 
-        # filename -> bubble mapping
+        # map displayed filename -> bubble (for quick UI progress updates)
         self._file_bubbles = {}
 
     def refresh_messages(self):
         """Refresh chat bubbles from app_state messages."""
+        # Clear existing widgets
         for i in reversed(range(self.scroll_layout.count())):
             widget = self.scroll_layout.itemAt(i).widget()
             if widget:
                 widget.setParent(None)
 
+        self._file_bubbles.clear()
+
+        # Recreate bubbles
         for username, message in app_state.messages:
             sender_type = "me" if username == app_state.get_username() else username
 
@@ -183,12 +201,14 @@ class ChatFrame(QWidget):
                 filename = message["filename"]
                 filesize = message["filesize"]
                 bubble = FileBubble(filename, filesize, sender_name=sender_type, client=self.client)
+                # store by the displayed filename (this matches FileReceiver.saved_basename)
                 self._file_bubbles[filename] = bubble
             else:
                 bubble = ChatBubble(message, sender_name=sender_type)
 
             self.scroll_layout.addWidget(bubble)
 
+        # Scroll to bottom
         self.scroll_area.verticalScrollBar().setValue(
             self.scroll_area.verticalScrollBar().maximum()
         )
@@ -209,7 +229,7 @@ class ChatFrame(QWidget):
         filesize = os.path.getsize(filepath)
         filename = os.path.basename(filepath)
 
-        # Add file message to GUI
+        # Add file message to GUI (sender's own bubble)
         app_state.messages.append((sender, {"type": "file", "filename": filename, "filesize": filesize}))
         self.refresh_messages()
 
@@ -217,15 +237,20 @@ class ChatFrame(QWidget):
         client = self.client
         if client:
             self.file_thread = FileSenderThread(client, filepath)
+            # attach progress updates to the local sender bubble (if present)
             if filename in self._file_bubbles:
-                self.file_thread.progress.connect(lambda pct: self._file_bubbles[filename].update_progress(pct))
+                # capture filename in default arg to avoid late-binding issues
+                fn = filename
+                self.file_thread.progress.connect(lambda pct, f=fn: self._file_bubbles[f].update_progress(pct))
             self.file_thread.finished.connect(lambda f: print(f"[FILE SENT] {f}"))
             self.file_thread.error.connect(lambda e: print(f"[FILE SEND ERROR] {e}"))
             self.file_thread.start()
 
-    def _on_receive_progress(self, filename, pct):
-        if filename in self._file_bubbles:
-            self._file_bubbles[filename].update_progress(pct)
+    def _on_receive_progress(self, saved_basename, pct):
+        # Update any bubble that matches the saved basename
+        bubble = self._file_bubbles.get(saved_basename)
+        if bubble:
+            bubble.update_progress(pct)
 
     def _adjust_textedit_height(self):
         doc_height = self.entry.document().size().height()

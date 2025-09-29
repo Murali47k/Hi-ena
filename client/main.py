@@ -1,3 +1,4 @@
+# client/main.py
 import argparse
 import socket
 import threading
@@ -6,14 +7,13 @@ import os
 import time
 import hashlib
 
-# add project root to sys.path
+# make project root importable
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.utils import create_message, parse_message
 from gui.app_state import app_state
-from gui.main import gui_bridge 
-from client.file_transfer import FileReceiver
-file_receiver = FileReceiver()
+from gui.main import gui_bridge
+from client.file_transfer import file_receiver
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 5555
@@ -46,8 +46,11 @@ class Client:
             return False
 
     def send(self, msg_str):
-        """Send a raw JSON message to the server."""
+        """Send a raw JSON message string to the server."""
         try:
+            # ensure string
+            if not isinstance(msg_str, str):
+                msg_str = create_message(msg_str.get("type", "unknown"), msg_str.get("data", {}))
             self.sock.sendall((msg_str + "\n").encode("utf-8"))
         except Exception as e:
             print("[ERROR] send failed:", e)
@@ -56,7 +59,7 @@ class Client:
         """Listen for messages from the server and handle them."""
         while self.listening:
             try:
-                data = self.sock.recv(4096)
+                data = self.sock.recv(8192)
                 if not data:
                     print("[INFO] Server closed connection.")
                     self.listening = False
@@ -77,18 +80,28 @@ class Client:
     def _handle_incoming(self, packet):
         """Handles incoming packets and updates GUI state."""
         ptype = packet.get("type")
-        pdata = packet.get("data", {})
+        pdata = packet.get("data", {}) or {}
 
         if ptype == "auth_result":
             print("[AUTH]", pdata)
-            if pdata.get("success"):
-                app_state.set_username(pdata.get("username"))
+            # server returns {'ok': True/False, 'message': ...}
+            if pdata.get("ok"):
+                # our client already knows its username; just ensure app_state has it
+                app_state.set_username(self.username)
+                try:
+                    gui_bridge.system_message.emit("Authenticated.")
+                except Exception:
+                    pass
 
         elif ptype == "chat":
             sender = pdata.get("from", "unknown")
             msg = pdata.get("message", "")
             print(f"{sender}: {msg}")
             app_state.add_message(sender, msg)
+            try:
+                gui_bridge.message_received.emit(sender, msg)
+            except Exception:
+                pass
 
         elif ptype == "system":
             sys_msg = pdata.get("message", "")
@@ -96,7 +109,7 @@ class Client:
             app_state.add_system_log(sys_msg)
             try:
                 gui_bridge.system_message.emit(sys_msg)
-            except RuntimeError:
+            except Exception:
                 pass
 
         elif ptype == "clients":
@@ -104,25 +117,30 @@ class Client:
             app_state.set_clients(clients)
             try:
                 gui_bridge.client_list_updated.emit(clients)
-            except RuntimeError:
+            except Exception:
                 pass
 
         # ---------- FILE TRANSFER HANDLING ----------
         elif ptype in ("file_offer", "file_chunk", "file_complete"):
-            sender = packet.get("from", "unknown")
+            # note: server places 'from' inside pdata (i.e., pdata['from'])
+            sender = pdata.get("from", "unknown")
             filename = pdata.get("filename", "unknown")
 
             if ptype == "file_offer":
                 size = pdata.get("filesize", 0)
                 print(f"[FILE OFFER] {sender} is sending {filename} ({size // 1024} KB)")
+                # prepare file receiver slot (so GUI progress can connect early)
+                file_receiver.handle_offer(pdata)
 
             elif ptype == "file_chunk":
+                # feed chunk into receiver (packet contains 'from', 'filename', 'chunk', 'filesize')
                 file_receiver.receive_chunk(pdata)
 
             elif ptype == "file_complete":
                 saved_path = file_receiver.finalize_file(pdata)
                 if saved_path:
                     print(f"[FILE COMPLETE] Saved to {saved_path}")
+                    # notify GUI / chat that a file message is available
                     app_state.add_message(sender, {
                         "type": "file",
                         "filename": os.path.basename(saved_path),
@@ -130,8 +148,9 @@ class Client:
                     })
                     try:
                         gui_bridge.messages_updated.emit()
-                    except RuntimeError:
+                    except Exception:
                         pass
+
         else:
             print("[RECV]", packet)
 
@@ -152,7 +171,7 @@ def command_host(args, use_gui=False):
     if not client.connect():
         return
 
-    app_state.set_client(client) 
+    app_state.set_client(client)
 
     password_hash = sha256_hex(args.password)
     payload = create_message("host", {
@@ -188,7 +207,7 @@ def command_join(args, use_gui=False):
     if not client.connect():
         return
 
-    app_state.set_client(client) 
+    app_state.set_client(client)
 
     password_hash = sha256_hex(args.password)
     payload = create_message("join", {

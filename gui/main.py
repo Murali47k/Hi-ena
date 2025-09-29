@@ -1,3 +1,4 @@
+# gui/main.py
 import sys
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout
 from PyQt5.QtCore import pyqtSignal, QObject, QTimer
@@ -14,6 +15,8 @@ class GuiBridge(QObject):
     message_received = pyqtSignal(str, str)   # sender, message
     system_message = pyqtSignal(str)
     client_list_updated = pyqtSignal(list)
+    messages_updated = pyqtSignal()           # new message list (useful after file_complete)
+
 
 gui_bridge = GuiBridge()
 
@@ -49,6 +52,7 @@ class MainWindow(QWidget):
         gui_bridge.message_received.connect(self.on_message_received)
         gui_bridge.system_message.connect(self.on_system_message)
         gui_bridge.client_list_updated.connect(self.on_client_list_updated)
+        gui_bridge.messages_updated.connect(self.chat_frame.refresh_messages)
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.refresh_ui)
