@@ -22,16 +22,7 @@ def send_json(conn, obj_str):
     except Exception:
         raise
 
-def recv_full(conn):
-    """Simple receiver for Phase 1 (newline-delimited messages)."""
-    try:
-        data = conn.recv(4096)
-        if not data:
-            return None
-        return data.decode("utf-8").strip()
-    except Exception:
-        return None
-    
+
 def broadcast_to_server(server_name, sender_username, text, sender_conn=None):
     """Broadcast a 'chat' message to all clients in server_name except sender."""
     with clients_lock:
@@ -41,7 +32,7 @@ def broadcast_to_server(server_name, sender_username, text, sender_conn=None):
                 if c["conn"] == sender_conn:
                     continue  # skip sender
 
-                # ✅ mark host if sender is host of this server
+                # mark host if sender is host of this server
                 display_name = sender_username
                 if auth_mgr.is_host(server_name, sender_username):
                     display_name = f"{sender_username} (HOST)"
@@ -56,6 +47,7 @@ def broadcast_to_server(server_name, sender_username, text, sender_conn=None):
                 connected_clients.remove(r)
             except ValueError:
                 pass
+
 
 def broadcast_system_message(server_name, text):
     """Broadcast a system message to all clients in server_name."""
@@ -74,11 +66,12 @@ def broadcast_system_message(server_name, text):
             except ValueError:
                 pass
 
+
 def broadcast_client_list(server_name):
     """Send updated client list to all clients in the server."""
     with clients_lock:
         clients = [c["username"] for c in connected_clients if c["server_name"] == server_name]
-        print(f"[DEBUG] broadcast_client_list -> connected_clients = {clients}")  # <--- add this
+        print(f"[DEBUG] broadcast_client_list -> connected_clients = {clients}")
         for c in connected_clients:
             if c["server_name"] == server_name:
                 try:
@@ -87,6 +80,7 @@ def broadcast_client_list(server_name):
                 except Exception:
                     pass
 
+
 def handle_client(conn, addr):
     client_entry = {"conn": conn, "addr": addr, "username": None, "server_name": None}
     with clients_lock:
@@ -94,17 +88,29 @@ def handle_client(conn, addr):
 
     print(f"[NEW CONNECTION] {addr}")
     try:
+        buffer = ""
         while True:
-            raw = recv_full(conn)
-            if raw is None:
+            try:
+                data = conn.recv(4096)
+            except Exception:
+                data = b""
+            if not data:
                 break
 
-            for line in raw.splitlines():
+            buffer += data.decode("utf-8")
+            # process all full newline-terminated messages
+            while "\n" in buffer:
+                line, buffer = buffer.split("\n", 1)
                 if not line.strip():
                     continue
                 packet = parse_message(line)
                 ptype = packet.get("type")
-                pdata = packet.get("data", {})
+                pdata = packet.get("data", {}) or {}
+
+                # If JSON was invalid, parse_message returns type 'error' -> ignore (don't spam client)
+                if ptype == "error":
+                    print(f"[DEBUG] Invalid JSON from {addr}: {pdata.get('message')}")
+                    continue
 
                 if ptype == "host":
                     # register a new server
@@ -120,7 +126,7 @@ def handle_client(conn, addr):
                     if ok:
                         client_entry["username"] = username
                         client_entry["server_name"] = server_name
-                        auth_mgr.servers[server_name]["host"] = username  # ✅ record host
+                        auth_mgr.servers[server_name]["host"] = username
                         resp = create_message("auth_result", {"ok": True, "message": "server_created"})
                         send_json(conn, resp)
                         broadcast_client_list(server_name)
@@ -145,7 +151,7 @@ def handle_client(conn, addr):
                         client_entry["server_name"] = server_name
                         resp = create_message("auth_result", {"ok": True, "message": "joined"})
                         send_json(conn, resp)
-                        broadcast_system_message(server_name, f"{username} has joined.") 
+                        broadcast_system_message(server_name, f"{username} has joined.")
                         broadcast_client_list(server_name)
                         print(f"[JOIN] {username} -> {server_name} from {addr}")
                     else:
@@ -165,10 +171,11 @@ def handle_client(conn, addr):
                         send_json(conn, resp)
 
                 elif ptype in ("file_offer", "file_chunk", "file_complete"):
+                    # Relay file messages to peers in same server
                     file_transfer.handle_file_message(packet, client_entry, connected_clients, clients_lock)
 
-
                 else:
+                    # unknown but valid packet type - inform client once
                     resp = create_message("system", {"message": "unknown_type"})
                     send_json(conn, resp)
 
@@ -177,7 +184,6 @@ def handle_client(conn, addr):
         traceback.print_exc()
     finally:
         with clients_lock:
-            # remove based on conn (or username)
             connected_clients[:] = [c for c in connected_clients if c["conn"] != conn]
 
         if client_entry["username"] and client_entry["server_name"]:
@@ -186,6 +192,7 @@ def handle_client(conn, addr):
 
         conn.close()
         print(f"[DISCONNECT] {addr}")
+
 
 def start_server(host=HOST, port=PORT):
     server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

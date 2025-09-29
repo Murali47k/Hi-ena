@@ -48,15 +48,19 @@ class Client:
     def send(self, msg_str):
         """Send a raw JSON message string to the server."""
         try:
-            # ensure string
+            # accept either a pre-built JSON string or a dict-like message
             if not isinstance(msg_str, str):
-                msg_str = create_message(msg_str.get("type", "unknown"), msg_str.get("data", {}))
+                # msg_str expected like {"type": "...", "data": {...}}
+                mtype = msg_str.get("type", "unknown")
+                mdata = msg_str.get("data", {})
+                msg_str = create_message(mtype, mdata)
             self.sock.sendall((msg_str + "\n").encode("utf-8"))
         except Exception as e:
             print("[ERROR] send failed:", e)
 
     def _listener_thread(self):
-        """Listen for messages from the server and handle them."""
+        """Listen for messages from the server and handle them (with buffer reassembly)."""
+        buffer = ""
         while self.listening:
             try:
                 data = self.sock.recv(8192)
@@ -65,11 +69,17 @@ class Client:
                     self.listening = False
                     break
 
-                text = data.decode("utf-8")
-                for line in text.splitlines():
+                buffer += data.decode("utf-8")
+                while "\n" in buffer:
+                    line, buffer = buffer.split("\n", 1)
                     if not line.strip():
                         continue
                     packet = parse_message(line)
+                    # ignore invalid JSON packets
+                    if packet.get("type") == "error":
+                        # optionally log debug: invalid JSON
+                        print("[DEBUG] Received invalid JSON from server:", packet.get("data", {}))
+                        continue
                     self._handle_incoming(packet)
 
             except Exception as e:
@@ -84,9 +94,7 @@ class Client:
 
         if ptype == "auth_result":
             print("[AUTH]", pdata)
-            # server returns {'ok': True/False, 'message': ...}
             if pdata.get("ok"):
-                # our client already knows its username; just ensure app_state has it
                 app_state.set_username(self.username)
                 try:
                     gui_bridge.system_message.emit("Authenticated.")
@@ -97,7 +105,8 @@ class Client:
             sender = pdata.get("from", "unknown")
             msg = pdata.get("message", "")
             print(f"{sender}: {msg}")
-            app_state.add_message(sender, msg)
+
+            # ONLY emit GUI signal; let the GUI (MainWindow.on_message_received) add to app_state.
             try:
                 gui_bridge.message_received.emit(sender, msg)
             except Exception:
@@ -122,7 +131,6 @@ class Client:
 
         # ---------- FILE TRANSFER HANDLING ----------
         elif ptype in ("file_offer", "file_chunk", "file_complete"):
-            # note: server places 'from' inside pdata (i.e., pdata['from'])
             sender = pdata.get("from", "unknown")
             filename = pdata.get("filename", "unknown")
 
@@ -133,14 +141,12 @@ class Client:
                 file_receiver.handle_offer(pdata)
 
             elif ptype == "file_chunk":
-                # feed chunk into receiver (packet contains 'from', 'filename', 'chunk', 'filesize')
                 file_receiver.receive_chunk(pdata)
 
             elif ptype == "file_complete":
                 saved_path = file_receiver.finalize_file(pdata)
                 if saved_path:
                     print(f"[FILE COMPLETE] Saved to {saved_path}")
-                    # notify GUI / chat that a file message is available
                     app_state.add_message(sender, {
                         "type": "file",
                         "filename": os.path.basename(saved_path),
@@ -153,7 +159,6 @@ class Client:
 
         else:
             print("[RECV]", packet)
-
 
     def close(self):
         self.listening = False
