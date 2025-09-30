@@ -1,0 +1,62 @@
+/* -------------------- ChatFrame -------------------- */
+QWidget {
+    background-color: #1F2A38; /* Modern dark blue-gray background */
+    padding: 10px;
+}
+
+QLineEdit {
+    background-color: #2E3A4A; /* Slightly darker input box */
+    color: #FFFFFF; /* White text for modern look */
+    border-radius: 20px;
+    padding: 8px 15px;
+    border: none;
+    font-size: 14px;
+}
+
+QPushButton {
+    background-color: #FF6B6B; /* Vibrant coral for send button */
+    color: #FFFFFF;
+    font-weight: bold;
+    border-radius: 20px;
+    padding: 8px 20px;
+    border: none;
+}
+
+QPushButton:hover {
+    background-color: #4ECDC4; /* Aqua for hover effect */
+    color: #1F2A38; /* Dark text on hover */
+}
+
+QPushButton:pressed {
+    background-color: #1F2A38; /* Dark pressed state */
+    border: 2px solid #FF6B6B; /* Coral border */
+    color: #FFFFFF;
+}
+
+/* -------------------- Chat Bubble -------------------- */
+ChatBubble QLabel {
+    border-radius: 14px;
+    padding: 10px 14px;
+    font-size: 14px;
+}
+
+/* Bubble for self (right-aligned) */
+ChatBubble[right="true"] QLabel {
+    background-color: #4ECDC4; /* Aqua-teal, matches hover accent */
+    color: #ffffffff;
+}
+
+/* Bubble for others (left-aligned) */
+ChatBubble[right="false"] QLabel {
+    background-color: #2E3A4A; /* Muted slate blue-gray */
+    color: #E0E0E0; /* Softer light gray for text */
+}
+
+/* Sender name above bubble */
+ChatBubble QLabel#senderName {
+    font-size: 10px;
+    font-weight:bold
+    color: #ffffffff; /* Subtle muted gray-blue for names */
+    margin-bottom: 2px;
+}
+

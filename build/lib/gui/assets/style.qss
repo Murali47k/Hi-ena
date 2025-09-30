@@ -1,0 +1,48 @@
+/* -------------------- Common -------------------- */
+QWidget {
+    font-family: "Segoe UI", "Roboto", sans-serif;
+    font-size: 14px;
+    color: #E6E8E6; /* Default text color, off-white for dark backgrounds */
+    background-color: #1D3141; /* Main window background: Dark Blue */
+}
+
+/* -------------------- Scrollbars -------------------- */
+QScrollBar:vertical {
+    border: none;
+    background: #0D1318; /* Very Dark Blue for scrollbar track */
+    width: 10px;
+    margin: 0;
+    border-radius: 5px;
+}
+
+QScrollBar::handle:vertical {
+    background: #7CBBC2; /* Light Blue for handle */
+    min-height: 20px;
+    border-radius: 5px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background: #C21E23; /* Red accent on hover */
+}
+
+QScrollBar::add-line, QScrollBar::sub-line {
+    height: 0px;
+}
+
+QScrollBar:horizontal {
+    border: none;
+    background: #0D1318;
+    height: 10px;
+    margin: 0;
+    border-radius: 5px;
+}
+
+QScrollBar::handle:horizontal {
+    background: #7CBBC2;
+    min-width: 20px;
+    border-radius: 5px;
+}
+
+QScrollBar::handle:horizontal:hover {
+    background: #C21E23;
+}

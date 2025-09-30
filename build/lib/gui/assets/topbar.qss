@@ -1,0 +1,12 @@
+/* -------------------- TopBar -------------------- */
+QWidget {
+    background-color: #0D1318; /* Very Dark Blue, same as sidebar for consistency */
+    border-bottom: 2px solid #7CBBC2; /* Light Blue accent line */
+}
+
+QLabel {
+    color: #FFFFFF; /* Pure white for top bar title */
+    font-weight: 700;
+    font-size: 18px;
+    padding: 10px 15px;
+}

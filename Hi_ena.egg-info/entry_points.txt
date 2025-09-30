@@ -1,0 +1,2 @@
+[console_scripts]
+Hi-ena = hi_ena:main
