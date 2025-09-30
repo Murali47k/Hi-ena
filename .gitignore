@@ -7,3 +7,7 @@ __pycache__/
 *.sqlite3
 *.log
 *.env
+
+build/
+dist/
+*.spec
