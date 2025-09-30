@@ -35,13 +35,13 @@ class ChatBubble(QWidget):
 
         # Copy button (always visible)
         self.copy_btn = QPushButton("📋 Copy")
-        self.copy_btn.setFixedSize(60, 20)
         self.copy_btn.setStyleSheet("""
             QPushButton {
                 background-color: #4ECDC4;
                 color: #1F2A38;
-                border-radius: 6px;
-                font-size: 10px;
+                border-radius: 10px;
+                padding: 4px 8px;
+                font-size: 12px;
             }
             QPushButton:hover {
                 background-color: #FF6B6B;
@@ -77,8 +77,13 @@ class FileBubble(ChatBubble):
         self.progress_bar.hide()
         self.layout().addWidget(self.progress_bar)
 
-        # Download button (always visible)
+        # Download button (initial style)
         self.download_btn = QPushButton("⬇ Download", self)
+        self._set_download_idle_style()
+        self.download_btn.clicked.connect(self._on_download_clicked)
+        self.layout().addWidget(self.download_btn, alignment=Qt.AlignRight if sender_name == "me" else Qt.AlignLeft)
+
+    def _set_download_idle_style(self):
         self.download_btn.setStyleSheet("""
             QPushButton {
                 background-color: #4ECDC4;
@@ -89,11 +94,20 @@ class FileBubble(ChatBubble):
             }
             QPushButton:hover {
                 background-color: #FF6B6B;
-                color: white;
+                color: white;     
             }
         """)
-        self.download_btn.clicked.connect(self._on_download_clicked)
-        self.layout().addWidget(self.download_btn, alignment=Qt.AlignRight)
+
+    def _set_download_complete_style(self):
+        self.download_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #90EE90;  /* Light green */
+                color: black;
+                border-radius: 10px;
+                padding: 4px 8px;
+                font-size: 12px;
+            }
+        """)
 
     def _on_download_clicked(self):
         """Download file via QThread and show progress bar."""
@@ -104,15 +118,21 @@ class FileBubble(ChatBubble):
 
         dst_dir = os.path.join(os.path.expanduser("~"), "Downloads")
         self.progress_bar.show()
+        self.download_btn.setEnabled(False)  # disable during download
+
         self.download_thread = DownloadThread(src, dst_dir=dst_dir)
         self.download_thread.progress.connect(lambda pct: self.update_progress(pct))
-        self.download_thread.finished.connect(lambda dst: print(f"[DOWNLOADED] {dst}"))
+        self.download_thread.finished.connect(self._on_download_finished)
         self.download_thread.error.connect(lambda e: print(f"[DOWNLOAD ERROR] {e}"))
         self.download_thread.start()
 
+    def _on_download_finished(self, dst):
+        print(f"[DOWNLOADED] {dst}")
+        self._set_download_complete_style()
+        self.download_btn.setText("✅ Downloaded")
+
     def update_progress(self, pct):
         self.progress_bar.setValue(pct)
-
 
 class ChatFrame(QWidget):
     """Main chat frame with scrollable bubbles and input field."""
